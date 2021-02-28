@@ -20,10 +20,20 @@
 #include <string>
 #include <thread>
 #include <regex>
+#include <vector>
 
 #include "Serial.hpp"
 
 using namespace std;
+
+template <typename ... Args>
+string format(const string& fmt, Args ... args)
+{
+	size_t len = snprintf(nullptr, 0, fmt.c_str(), args ...);
+	vector<char> buf(len + 1);
+	snprintf(&buf[0], len + 1, fmt.c_str(), args ...);
+	return string(&buf[0], &buf[0] + len);
+}
 
 class DeepronDAT : public DAT_CPlusPlusBase
 {
@@ -54,7 +64,7 @@ public:
 
 	void reset()
 	{
-		result = { "00'00\"00000", "00'00\"00000" };
+		result = { "0.00", "0.00" };
 	}
 
 	bool open()
@@ -89,17 +99,50 @@ public:
 			for (auto c : vals) {
 				recv_string += c;
 
-				std::regex re("<ID0([\\d])><([^>]+)><E>");
-				if (regex_search(recv_string, smatch, re))
+				regex re_fs("<ID0([\\d])><(FALSE START)[^\\>]+><E>");
+				regex re_time("<ID0([\\d])><[\\d]+'([\\d]{2})\"([\\d]{2})[\\d]{3}><E>");
+				regex re_fin("<ID0([\\d])><[\\d]+'([\\d]{2})\"([\\d]{3})[^\\>]+><E>");
+				bool matched = false;
+
+				//cout << recv_string << endl;
+				if (regex_search(recv_string, smatch, re_fs))
 				{
 					int index = stoi(smatch[1]) - 1;
-					if (index < result.size()) {
-						result[index] = smatch[2];
+					if (index < result.size())
+					{
+						result[index] = "FS";
 					}
-
-					recv_string = "";
+					matched = true;
 				}
 
+				if (regex_search(recv_string, smatch, re_time))
+				{
+					int index = stoi(smatch[1]) - 1;
+					if (index < result.size())
+					{
+						int sec = stoi(smatch[2]);
+						int msec = stoi(smatch[3]);
+						result[index] = format("%d.%02d", sec, msec);
+					}
+					matched = true;
+				}
+
+				if (regex_search(recv_string, smatch, re_fin))
+				{
+					int index = stoi(smatch[1]) - 1;
+					if (index < result.size())
+					{
+						int sec = stoi(smatch[2]);
+						int msec = stoi(smatch[3]);
+						result[index] = format("%d.%03d", sec, msec);
+					}
+					matched = true;
+				}
+
+				if (matched)
+				{
+					recv_string = "";
+				}
 			}
 		}
 	}
